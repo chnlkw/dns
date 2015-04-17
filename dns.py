@@ -1,5 +1,6 @@
  # -*- coding: UTF-8 -*-
 
+import re
 import gevent
 import dnslib
 from gevent import socket
@@ -10,15 +11,32 @@ rev=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
 rev.bind(('',53))
 ip=[]
 cur=0
+rule=[]
 
 def preload():
     for i in open('ip'):
         ip.append(i)
     print "load "+str(len(ip))+" ip"
+    for line in open('lst.txt'):
+        arr=re.split('[\s]+', line)
+        print arr
+        rule.append((arr[0], re.compile(arr[1])))
 
 def send_request(data):
     global cur
-    ret=rev.sendto(data,(ip[cur],53))
+
+    req=dnslib.DNSRecord.parse(data)
+    qname=str(req.q.qname)
+    print qname
+
+    #ret=rev.sendto(data,(ip[cur],53))
+
+    for i, r in rule:
+        if r.match(qname):
+            print 'match', i
+            ret=rev.sendto(data, (i, 53))
+            break
+
     cur=(cur+1)%len(ip)
 
 class Cache:
@@ -56,7 +74,7 @@ def handle_request(s,data,addr):
 def handle_response(data):
     req=dnslib.DNSRecord.parse(data)
     qname=str(req.q.qname)
-    print qname
+#    print qname
     cache.set(qname,data)
     e=cache.get(qname+"e")
     cache.remove(qname+"e")
@@ -66,9 +84,13 @@ def handle_response(data):
 
 def handler(s,data,addr):
     req=dnslib.DNSRecord.parse(data)
+#    print req
     if req.header.qr:
+#        print 'qr'
         handle_response(data)
-    else:handle_request(s,data,addr)
+    else:
+#        print 'no-qr'
+        handle_request(s,data,addr)
 
 def main():
     preload()
